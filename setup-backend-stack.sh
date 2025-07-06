@@ -1,4 +1,4 @@
-#!/bin/bash
+﻿#!/bin/bash
 
 # Development Stack Installation Script for Ubuntu Server 25.04
 # Stack: Bun, Elysia, Drizzle, PostgreSQL, Caddy, JWT Authentication
@@ -157,7 +157,7 @@ log "Installing Elysia, Drizzle, and other dependencies..."
 bun add elysia
 bun add drizzle-orm postgres
 bun add -d drizzle-kit
-bun add @elysiajs/jwt @elysiajs/cors @elysiajs/helmet
+bun add @elysiajs/jwt @elysiajs/cors
 bun add bcryptjs
 bun add -d @types/bcryptjs
 
@@ -361,28 +361,32 @@ log "Creating main server file..."
 cat > src/index.ts << 'EOF'
 import { Elysia } from 'elysia';
 import { cors } from '@elysiajs/cors';
-import { helmet } from '@elysiajs/helmet';
+import { jwt } from '@elysiajs/jwt';
+// Security headers will be handled by Caddy
 import { authRoutes } from './routes/auth';
-import { authMiddleware } from './middleware/auth';
 
 const app = new Elysia()
   .use(cors())
-  .use(helmet())
+  .use(jwt({
+    name: 'jwt',
+    secret: process.env.JWT_SECRET!,
+  }))
   .use(authRoutes)
   .get('/', () => ({
     message: 'Server is running!',
     timestamp: new Date().toISOString(),
   }))
-  .get('/protected', ({ user, isAuthenticated }) => {
-    if (!isAuthenticated) {
+  .get('/protected', async ({ jwt, cookie: { auth } }) => {
+    const profile = await jwt.verify(auth.value);
+    
+    if (!profile) {
       return { error: 'Unauthorized' };
     }
+    
     return { 
       message: 'This is a protected route',
-      user 
+      user: profile
     };
-  }, {
-    beforeHandle: authMiddleware,
   })
   .listen(process.env.PORT || 3000);
 
@@ -412,7 +416,6 @@ cat > package.json << EOF
     "postgres": "latest",
     "@elysiajs/jwt": "latest",
     "@elysiajs/cors": "latest",
-    "@elysiajs/helmet": "latest",
     "bcryptjs": "latest"
   },
   "devDependencies": {
